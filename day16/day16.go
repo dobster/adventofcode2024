@@ -36,7 +36,9 @@ func readInput(filename string) map[pos]string {
 
 func process(filename string) {
 	inp := readInput(filename)
-	fmt.Printf("%s part1: %d\n", filename, part1(inp))
+	part1result := part1(inp)
+	fmt.Printf("%s part1: %d\n", filename, part1result)
+	fmt.Printf("%s part2: %d\n", filename, part2(inp, part1result))
 }
 
 func findReindeer(m map[pos]string) pos {
@@ -52,6 +54,7 @@ type Path struct {
 	p    pos
 	d    dir
 	cost int
+	path []pos
 }
 
 type PathHeap []Path
@@ -114,14 +117,29 @@ func leftTurn(d dir) dir {
 	}
 }
 
+func direction(d dir) string {
+	switch d {
+	case dir{1, 0}:
+		return ">"
+	case dir{0, -1}:
+		return "^"
+	case dir{-1, 0}:
+		return "<"
+	case dir{0, 1}:
+		return "v"
+	default:
+		return "?"
+	}
+}
+
 func dump(m map[pos]string, h *PathHeap) {
 	v := make(map[pos]string)
 	for _, p := range *h {
-		v[p.p] = "X"
+		v[p.p] = direction(p.d)
 	}
 
-	for y := 0; y < 15; y++ {
-		for x := 0; x < 15; x++ {
+	for y := 0; y < 142; y++ {
+		for x := 0; x < 142; x++ {
 			if z, ok := v[pos{x, y}]; ok {
 				fmt.Printf(z)
 			} else if z, ok := m[pos{x, y}]; ok {
@@ -135,25 +153,36 @@ func dump(m map[pos]string, h *PathHeap) {
 	fmt.Println()
 }
 
-type key struct {
-	p pos
-	d dir
+func dumpBestPath(m map[pos]string, bestPathTiles []pos) {
+	for y := 0; y < 15; y++ {
+		for x := 0; x < 15; x++ {
+			if contains(bestPathTiles, pos{x, y}) {
+				fmt.Printf("O")
+			} else if z, ok := m[pos{x, y}]; ok {
+				fmt.Printf("%s", z)
+			} else {
+				fmt.Printf(".")
+			}
+		}
+		fmt.Println()
+	}
+	fmt.Println()
 }
 
 func part1(m map[pos]string) int {
-	r := findReindeer(m)
-	d := dir{1, 0} // East
+	initp := findReindeer(m)
+	initd := dir{1, 0} // East
 
-	explored := make(map[key]int)
+	explored := make(map[pos]int)
 
-	h := &PathHeap{Path{r, d, 0}}
+	h := &PathHeap{Path{initp, initd, 0, []pos{}}}
 	heap.Init(h)
 
 	for {
-		dump(m, h)
+		// dump(m, h)
 
 		path := heap.Pop(h).(Path)
-		// fmt.Printf("considering %v\n", path)
+		// fmt.Printf("exploring %v %s\n", path.p, direction(path.d))
 
 		fwdPos := pos{path.p.x + path.d.dx, path.p.y + path.d.dy}
 
@@ -161,38 +190,115 @@ func part1(m map[pos]string) int {
 			return path.cost + 1
 		}
 
-		if m[fwdPos] == "." {
-			fwdPath := Path{p: fwdPos, d: d, cost: path.cost + 1}
-			val, ok := explored[key{fwdPath.p, fwdPath.d}]
-			if !ok || val > fwdPath.cost {
-				heap.Push(h, fwdPath)
-			}
+		if m[fwdPos] == "." && explored[fwdPos] == 0 {
+			fwdPath := Path{fwdPos, path.d, path.cost + 1, []pos{}}
+			heap.Push(h, fwdPath)
 		}
 
 		rightDir := rightTurn(path.d)
 		rightPos := pos{path.p.x + rightDir.dx, path.p.y + rightDir.dy}
-		if m[rightPos] == "." {
-			rightPath := Path{rightPos, rightDir, path.cost + 1000 + 1}
-			val, ok := explored[key{rightPath.p, rightPath.d}]
-			if !ok || val > rightPath.cost {
-				heap.Push(h, rightPath)
-			}
+		if m[rightPos] == "." && explored[rightPos] == 0 {
+			rightPath := Path{rightPos, rightDir, path.cost + 1000 + 1, []pos{}}
+			heap.Push(h, rightPath)
 		}
 
 		leftDir := leftTurn(path.d)
 		leftPos := pos{path.p.x + leftDir.dx, path.p.y + leftDir.dy}
-		if m[leftPos] == "." {
-			leftPath := Path{leftPos, leftDir, path.cost + 1000 + 1}
-			val, ok := explored[key{leftPath.p, leftPath.d}]
-			if !ok || val > leftPath.cost {
-				heap.Push(h, leftPath)
-			}
+		if m[leftPos] == "." && explored[leftPos] == 0 {
+			leftPath := Path{leftPos, leftDir, path.cost + 1000 + 1, []pos{}}
+			heap.Push(h, leftPath)
+		}
+
+		explored[path.p] = path.cost
+	}
+}
+
+func contains(paths []pos, p pos) bool {
+	for _, path := range paths {
+		if path.x == p.x && path.y == p.y {
+			return true
+		}
+	}
+	return false
+}
+
+func newPath(path []pos, p pos) []pos {
+	newp := make([]pos, len(path)+1)
+	copy(newp, path)
+	newp[len(path)] = p
+	return newp
+}
+
+type key struct {
+	p pos
+	d dir
+}
+
+func part2(m map[pos]string, bestCost int) int {
+	initp := findReindeer(m)
+	initd := dir{1, 0} // East
+
+	explored := make(map[key]int)
+
+	h := &PathHeap{Path{initp, initd, 0, []pos{initp}}}
+	heap.Init(h)
+
+	bestTiles := []pos{}
+
+	for len(*h) > 0 {
+		path := heap.Pop(h).(Path)
+
+		if path.cost > bestCost {
+			break
+		}
+
+		fwdPos := pos{path.p.x + path.d.dx, path.p.y + path.d.dy}
+
+		if m[fwdPos] == "E" {
+			if path.cost+1 == bestCost {
+				for _, tile := range path.path {
+					bestTiles = append(bestTiles, tile)
+				}
+				bestTiles = append(bestTiles, fwdPos)
+			} 
+			continue
+		}
+
+		fwdPath := Path{fwdPos, path.d, path.cost + 1, newPath(path.path, fwdPos)}
+		kFwd := key{fwdPath.p, fwdPath.d}
+		if m[fwdPos] == "." && (explored[kFwd] == 0 || explored[kFwd] == fwdPath.cost) {
+			heap.Push(h, fwdPath)
+		}
+
+		rightDir := rightTurn(path.d)
+		rightPos := pos{path.p.x + rightDir.dx, path.p.y + rightDir.dy}
+		rightPath := Path{rightPos, rightDir, path.cost + 1000 + 1, newPath(path.path, rightPos)}
+		kRight := key{rightPath.p, rightPath.d}
+		if m[rightPos] == "." && (explored[kRight] == 0 || explored[kRight] == path.cost+1000+1) {
+			heap.Push(h, rightPath)
+		}
+
+		leftDir := leftTurn(path.d)
+		leftPos := pos{path.p.x + leftDir.dx, path.p.y + leftDir.dy}
+		leftPath := Path{leftPos, leftDir, path.cost + 1000 + 1, newPath(path.path, leftPos)}
+		kLeft := key{leftPath.p, leftPath.d}
+		if m[leftPos] == "." && (explored[kLeft] == 0 || explored[kLeft] == path.cost+1000+1) {
+			heap.Push(h, leftPath)
 		}
 
 		explored[key{path.p, path.d}] = path.cost
 	}
+
+	bestTileMap := make(map[pos]bool)
+	for _, tile := range bestTiles {
+		bestTileMap[tile] = true
+	}
+
+	return len(bestTileMap)
 }
 
 func main() {
 	process("sample.txt")
+	process("sample2.txt")
+	process("input.txt")
 }
